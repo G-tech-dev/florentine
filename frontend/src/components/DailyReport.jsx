@@ -19,7 +19,7 @@ export default function DailyReport() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const printReport = () => {
     if (!reportRef.current) return;
