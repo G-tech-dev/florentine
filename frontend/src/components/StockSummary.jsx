@@ -1,348 +1,69 @@
 import { useEffect, useState } from "react";
 import api from "../api";
-import { BarChart3, Package, AlertTriangle, TrendingDown, Search, Download, Filter } from "lucide-react";
+import { Search, Package, DollarSign, AlertTriangle, BarChart3, Layers, Sparkles } from "lucide-react";
 
 export default function StockSummary() {
   const [summary, setSummary] = useState([]);
-  const [filteredSummary, setFilteredSummary] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [supplierFilter, setSupplierFilter] = useState("all");
-  const [uniqueSuppliers, setUniqueSuppliers] = useState([]);
+  const [sortBy, setSortBy] = useState("itemName");
+  const [sortOrder, setSortOrder] = useState("asc");
 
   const fetchSummary = async () => {
-    try {
-      const res = await api.get("/stock/summary");
-      setSummary(res.data);
-      setFilteredSummary(res.data);
-      
-      // Extract unique suppliers
-      const suppliers = [...new Set(res.data.map(item => item.supplierName).filter(s => s))];
-      setUniqueSuppliers(suppliers);
-    } catch (err) {
-      console.log(err);
-    } finally {
-      setLoading(false);
-    }
+    try { const res = await api.get("/stock/summary"); setSummary(res.data); } catch (err) { console.log(err); } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchSummary();
-  }, []);
+  useEffect(() => { fetchSummary(); }, []);
 
-  // Apply filters whenever search term, status filter, or supplier filter changes
-  useEffect(() => {
-    let filtered = [...summary];
-    
-    // Search filter
-    if (searchTerm) {
-      filtered = filtered.filter(item => 
-        item.itemname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (item.description && item.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (item.supplierName && item.supplierName.toLowerCase().includes(searchTerm.toLowerCase()))
-      );
-    }
-    
-    // Status filter
-    if (statusFilter !== "all") {
-      filtered = filtered.filter(item => {
-        if (statusFilter === "instock") return item.currentStock >= 10;
-        if (statusFilter === "lowstock") return item.currentStock < 10 && item.currentStock > 0;
-        if (statusFilter === "outofstock") return item.currentStock === 0;
-        return true;
-      });
-    }
-    
-    // Supplier filter
-    if (supplierFilter !== "all") {
-      filtered = filtered.filter(item => item.supplierName === supplierFilter);
-    }
-    
-    setFilteredSummary(filtered);
-  }, [searchTerm, statusFilter, supplierFilter, summary]);
-
-  const totalStock = filteredSummary.reduce((sum, item) => sum + item.currentStock, 0);
-  const lowStockCount = filteredSummary.filter((item) => item.currentStock < 10 && item.currentStock > 0).length;
-  const outOfStockCount = filteredSummary.filter((item) => item.currentStock === 0).length;
-  const totalItems = filteredSummary.length;
-  const totalReceived = filteredSummary.reduce((sum, item) => sum + item.totalReceived, 0);
-  const totalIssued = filteredSummary.reduce((sum, item) => sum + item.totalIssued, 0);
-
-  const exportToCSV = () => {
-    const csvData = [
-      ["Stock Summary Report"],
-      [`Generated: ${new Date().toLocaleString()}`],
-      [],
-      ["Item Name", "Description", "Total Received", "Total Issued", "Current Stock", "Supplier", "Status"],
-      ...filteredSummary.map(item => [
-        item.itemname,
-        item.description || "",
-        item.totalReceived,
-        item.totalIssued,
-        item.currentStock,
-        item.supplierName || "",
-        item.currentStock === 0 ? "Out of Stock" : item.currentStock < 10 ? "Low Stock" : "In Stock"
-      ]),
-      [],
-      ["Summary Statistics"],
-      [`Total Items: ${totalItems}`],
-      [`Total Stock Units: ${totalStock}`],
-      [`Total Received: ${totalReceived}`],
-      [`Total Issued: ${totalIssued}`],
-      [`Low Stock Items: ${lowStockCount}`],
-      [`Out of Stock Items: ${outOfStockCount}`]
-    ];
-
-    const csvContent = csvData.map(row => row.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `stock_summary_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const getStockStatus = (quantity) => {
+    if (quantity === 0) return { label: "Out of Stock", color: "text-red-400", bg: "bg-red-500/20", border: "border-red-500/30" };
+    if (quantity < 10) return { label: "Low Stock", color: "text-amber-400", bg: "bg-amber-500/20", border: "border-amber-500/30" };
+    if (quantity < 50) return { label: "Moderate", color: "text-blue-400", bg: "bg-blue-500/20", border: "border-blue-500/30" };
+    return { label: "Adequate", color: "text-green-400", bg: "bg-green-500/20", border: "border-green-500/30" };
   };
 
-  const getStockTrend = (item) => {
-    const percentageUsed = (item.totalIssued / item.totalReceived) * 100;
-    if (percentageUsed >= 80) return "text-red-400";
-    if (percentageUsed >= 50) return "text-yellow-400";
-    return "text-green-400";
-  };
+  const handleSort = (field) => { if (sortBy === field) setSortOrder(sortOrder === "asc" ? "desc" : "asc"); else { setSortBy(field); setSortOrder("asc"); } };
+
+  const filteredSummary = summary.filter(item => item.ItemName.toLowerCase().includes(searchTerm.toLowerCase())).sort((a, b) => {
+    if (sortBy === "itemName") return sortOrder === "asc" ? a.ItemName.localeCompare(b.ItemName) : b.ItemName.localeCompare(a.ItemName);
+    if (sortBy === "quantity") return sortOrder === "asc" ? a.CurrentQuantity - b.CurrentQuantity : b.CurrentQuantity - a.CurrentQuantity;
+    if (sortBy === "value") return sortOrder === "asc" ? a.ValueInStock - b.ValueInStock : b.ValueInStock - a.ValueInStock;
+    if (sortBy === "unitPrice") return sortOrder === "asc" ? a.UnitPrice - b.UnitPrice : b.UnitPrice - a.UnitPrice;
+    return 0;
+  });
+
+  const totalValue = summary.reduce((sum, item) => sum + item.ValueInStock, 0);
+  const totalItems = summary.reduce((sum, item) => sum + item.CurrentQuantity, 0);
+  const totalProducts = summary.length;
+  const lowStockCount = summary.filter(item => item.CurrentQuantity < 10 && item.CurrentQuantity > 0).length;
+  const outOfStockCount = summary.filter(item => item.CurrentQuantity === 0).length;
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <BarChart3 /> Stock Summary
-        </h1>
-        <p className="text-gray-400">Current stock levels across all items</p>
+    <div className="space-y-8">
+      {/* Header */}
+      <div><div className="flex items-center gap-3 mb-2"><div className="w-1 h-10 bg-gradient-to-b from-purple-500 to-pink-500 rounded-full"></div><h1 className="text-4xl font-bold bg-gradient-to-r from-white to-purple-300 bg-clip-text text-transparent">Stock Summary</h1><Sparkles className="text-purple-400" size={24} /></div><p className="text-white/60 pl-4">Current inventory status</p><div className="w-full h-px bg-gradient-to-r from-white/20 to-transparent mt-4"></div></div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10 p-6"><div className="flex items-center justify-between mb-3"><div className="p-2 bg-blue-500/20 rounded-xl"><Layers className="text-blue-400" size={22} /></div><span className="text-2xl font-bold text-white">{totalProducts}</span></div><p className="text-white/50 text-xs font-medium uppercase tracking-wider">Total Products</p></div>
+        <div className="rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10 p-6"><div className="flex items-center justify-between mb-3"><div className="p-2 bg-emerald-500/20 rounded-xl"><Package className="text-emerald-400" size={22} /></div><span className="text-2xl font-bold text-white">{totalItems.toLocaleString()}</span></div><p className="text-white/50 text-xs font-medium uppercase tracking-wider">Total Quantity</p></div>
+        <div className="rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10 p-6"><div className="flex items-center justify-between mb-3"><div className="p-2 bg-amber-500/20 rounded-xl"><DollarSign className="text-amber-400" size={22} /></div><span className="text-xl font-bold text-white">RWF {totalValue.toLocaleString()}</span></div><p className="text-white/50 text-xs font-medium uppercase tracking-wider">Total Value</p></div>
+        <div className="rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10 p-6"><div className="flex items-center justify-between mb-3"><div className="p-2 bg-red-500/20 rounded-xl"><AlertTriangle className="text-red-400" size={22} /></div><span className="text-2xl font-bold text-white">{lowStockCount + outOfStockCount}</span></div><p className="text-white/50 text-xs font-medium uppercase tracking-wider">Low/Out of Stock</p></div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-slate-800 p-4 rounded-xl hover:bg-slate-700 transition">
-          <Package className="text-blue-400 mb-2" size={24} />
-          <p className="text-2xl font-bold">{totalItems}</p>
-          <p className="text-gray-400 text-sm">Total Items</p>
-          <p className="text-xs text-gray-500 mt-1">Filtered results</p>
-        </div>
-        <div className="bg-slate-800 p-4 rounded-xl hover:bg-slate-700 transition">
-          <TrendingDown className="text-green-400 mb-2" size={24} />
-          <p className="text-2xl font-bold">{totalStock}</p>
-          <p className="text-gray-400 text-sm">Total Stock Units</p>
-          <p className="text-xs text-gray-500 mt-1">Current inventory</p>
-        </div>
-        <div className="bg-slate-800 p-4 rounded-xl hover:bg-slate-700 transition">
-          <AlertTriangle className="text-yellow-400 mb-2" size={24} />
-          <p className="text-2xl font-bold">{lowStockCount}</p>
-          <p className="text-gray-400 text-sm">Low Stock Items</p>
-          <p className="text-xs text-yellow-400 mt-1">Below 10 units</p>
-        </div>
-        <div className="bg-slate-800 p-4 rounded-xl hover:bg-slate-700 transition">
-          <AlertTriangle className="text-red-400 mb-2" size={24} />
-          <p className="text-2xl font-bold">{outOfStockCount}</p>
-          <p className="text-gray-400 text-sm">Out of Stock</p>
-          <p className="text-xs text-red-400 mt-1">Need immediate restock</p>
-        </div>
-      </div>
+      {/* Stock Distribution */}
+      <div className="rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10 p-6"><h3 className="font-semibold text-white mb-4 flex items-center gap-2"><BarChart3 size={18} /> Stock Distribution</h3><div className="space-y-3"><div><div className="flex justify-between text-sm mb-1"><span className="text-green-400">Adequate (≥50)</span><span className="text-white">{summary.filter(i => i.CurrentQuantity >= 50).length}</span></div><div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-green-500 rounded-full" style={{ width: `${(summary.filter(i => i.CurrentQuantity >= 50).length / totalProducts) * 100}%` }}></div></div></div><div><div className="flex justify-between text-sm mb-1"><span className="text-blue-400">Moderate (10-49)</span><span className="text-white">{summary.filter(i => i.CurrentQuantity >= 10 && i.CurrentQuantity < 50).length}</span></div><div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-blue-500 rounded-full" style={{ width: `${(summary.filter(i => i.CurrentQuantity >= 10 && i.CurrentQuantity < 50).length / totalProducts) * 100}%` }}></div></div></div><div><div className="flex justify-between text-sm mb-1"><span className="text-amber-400">Low Stock (1-9)</span><span className="text-white">{lowStockCount}</span></div><div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-amber-500 rounded-full" style={{ width: `${(lowStockCount / totalProducts) * 100}%` }}></div></div></div><div><div className="flex justify-between text-sm mb-1"><span className="text-red-400">Out of Stock (0)</span><span className="text-white">{outOfStockCount}</span></div><div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-red-500 rounded-full" style={{ width: `${(outOfStockCount / totalProducts) * 100}%` }}></div></div></div></div></div>
 
-      {/* Additional Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div className="bg-slate-800/50 p-4 rounded-xl">
-          <p className="text-gray-400 text-sm">Total Received (All Time)</p>
-          <p className="text-xl font-bold text-blue-400">{totalReceived}</p>
-        </div>
-        <div className="bg-slate-800/50 p-4 rounded-xl">
-          <p className="text-gray-400 text-sm">Total Issued (All Time)</p>
-          <p className="text-xl font-bold text-yellow-400">{totalIssued}</p>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-slate-800/50 p-4 rounded-xl mb-6">
-        <div className="flex flex-wrap gap-4">
-          {/* Search Bar */}
-          <div className="flex-1 min-w-[200px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="text"
-                placeholder="Search by item name, description, or supplier..."
-                className="w-full pl-10 pr-4 py-2 bg-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Status Filter */}
-          <div className="min-w-[150px]">
-            <select
-              className="w-full px-4 py-2 bg-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="all">All Status</option>
-              <option value="instock">In Stock (&gt;=10)</option>
-              <option value="lowstock">Low Stock (&lt;10 &gt;0)</option>
-              <option value="outofstock">Out of Stock (0)</option>
-            </select>
-          </div>
-
-          {/* Supplier Filter */}
-          <div className="min-w-[150px]">
-            <select
-              className="w-full px-4 py-2 bg-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={supplierFilter}
-              onChange={(e) => setSupplierFilter(e.target.value)}
-            >
-              <option value="all">All Suppliers</option>
-              {uniqueSuppliers.map(supplier => (
-                <option key={supplier} value={supplier}>{supplier}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Export Button */}
-          <button
-            onClick={exportToCSV}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg flex items-center gap-2 transition"
-          >
-            <Download size={18} /> Export CSV
-          </button>
-
-          {/* Clear Filters */}
-          {(searchTerm || statusFilter !== "all" || supplierFilter !== "all") && (
-            <button
-              onClick={() => {
-                setSearchTerm("");
-                setStatusFilter("all");
-                setSupplierFilter("all");
-              }}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition"
-            >
-              Clear Filters
-            </button>
-          )}
-        </div>
-        
-        {/* Filter Stats */}
-        <div className="mt-3 text-sm text-gray-400">
-          Showing {filteredSummary.length} of {summary.length} items
-          {searchTerm && ` • Search: "${searchTerm}"`}
-          {statusFilter !== "all" && ` • Status: ${statusFilter}`}
-          {supplierFilter !== "all" && ` • Supplier: ${supplierFilter}`}
-        </div>
-      </div>
+      {/* Search */}
+      <div className="relative"><Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/40" size={18} /><input type="text" placeholder="Search by item name..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-12 pr-4 py-3 rounded-xl bg-white/5 backdrop-blur-sm border border-white/10 text-white placeholder-white/40 focus:border-purple-500 outline-none transition-all" /></div>
 
       {/* Stock Table */}
-      {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400"></div>
+      {loading ? (<div className="flex justify-center py-20"><div className="w-12 h-12 border-3 border-purple-500 border-t-transparent rounded-full animate-spin"></div></div>) : (
+        <div className="rounded-2xl bg-white/5 backdrop-blur-xl border border-white/10 overflow-hidden">
+          <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-white/10"><tr><th className="p-4 cursor-pointer text-white/70 text-xs uppercase tracking-wider" onClick={() => handleSort("itemName")}>Item Name {sortBy === "itemName" && (sortOrder === "asc" ? "↑" : "↓")}</th><th className="p-4 text-white/70 text-xs uppercase tracking-wider">Specification</th><th className="p-4 text-white/70 text-xs uppercase tracking-wider">Unit</th><th className="p-4 cursor-pointer text-white/70 text-xs uppercase tracking-wider" onClick={() => handleSort("unitPrice")}>Unit Price {sortBy === "unitPrice" && (sortOrder === "asc" ? "↑" : "↓")}</th><th className="p-4 cursor-pointer text-white/70 text-xs uppercase tracking-wider" onClick={() => handleSort("quantity")}>Quantity {sortBy === "quantity" && (sortOrder === "asc" ? "↑" : "↓")}</th><th className="p-4 cursor-pointer text-white/70 text-xs uppercase tracking-wider" onClick={() => handleSort("value")}>Value {sortBy === "value" && (sortOrder === "asc" ? "↑" : "↓")}</th><th className="p-4 text-white/70 text-xs uppercase tracking-wider">Status</th></tr></thead>
+            <tbody>{filteredSummary.length === 0 ? (<tr><td colSpan="7" className="p-8 text-center text-white/40">No items found</td></tr>) : (filteredSummary.map((item, idx) => { const status = getStockStatus(item.CurrentQuantity); return (<tr key={idx} className="border-t border-white/10 hover:bg-white/5 transition-colors"><td className="p-4 font-medium text-white">{item.ItemName}</td><td className="p-4 text-white/60 text-sm">{item.Specification || "-"}</td><td className="p-4 text-white/60 text-sm">{item.UnitMeasure || "-"}</td><td className="p-4 text-white/70">RWF {item.UnitPrice.toLocaleString()}</td><td className="p-4"><span className={`font-semibold ${item.CurrentQuantity < 10 ? 'text-amber-400' : 'text-white'}`}>{item.CurrentQuantity}</span></td><td className="p-4 text-emerald-400 font-semibold">RWF {item.ValueInStock.toLocaleString()}</td><td className="p-4"><span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${status.bg} ${status.color} border ${status.border}`}>{status.label}</span></td></tr>); }))}</tbody>
+          </table>
         </div>
-      ) : (
-        <div className="bg-slate-800 rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead className="bg-slate-700">
-                <tr>
-                  <th className="p-3">Item Name</th>
-                  <th className="p-3 hidden lg:table-cell">Description</th>
-                  <th className="p-3">Total Received</th>
-                  <th className="p-3">Total Issued</th>
-                  <th className="p-3">Current Stock</th>
-                  <th className="p-3 hidden md:table-cell">Supplier</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3 hidden lg:table-cell">Usage</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSummary.length === 0 ? (
-                  <tr>
-                    <td colSpan="8" className="text-center p-8 text-gray-400">
-                      No items found matching your filters
-                    </td>
-                  </tr>
-                ) : (
-                  filteredSummary.map((item, index) => {
-                    const usagePercentage = (item.totalIssued / item.totalReceived) * 100;
-                    return (
-                      <tr key={index} className="border-b border-slate-700 hover:bg-slate-700/50 transition">
-                        <td className="p-3 font-medium">{item.itemname}</td>
-                        <td className="p-3 hidden lg:table-cell text-gray-300">
-                          {item.description?.length > 50 ? `${item.description.slice(0, 50)}...` : item.description || "-"}
-                        </td>
-                        <td className="p-3">{item.totalReceived}</td>
-                        <td className="p-3">{item.totalIssued}</td>
-                        <td className="p-3">
-                          <span className={`font-bold ${
-                            item.currentStock === 0 ? "text-red-400" :
-                            item.currentStock < 10 ? "text-yellow-400" : "text-green-400"
-                          }`}>
-                            {item.currentStock}
-                          </span>
-                        </td>
-                        <td className="p-3 hidden md:table-cell">{item.supplierName || "-"}</td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2 py-1 rounded text-sm whitespace-nowrap ${
-                              item.currentStock === 0
-                                ? "bg-red-600"
-                                : item.currentStock < 10
-                                ? "bg-yellow-600"
-                                : "bg-green-600"
-                            }`}
-                          >
-                            {item.currentStock === 0
-                              ? "Out of Stock"
-                              : item.currentStock < 10
-                              ? "Low Stock"
-                              : "In Stock"}
-                          </span>
-                        </td>
-                        <td className="p-3 hidden lg:table-cell">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-slate-600 rounded-full h-2">
-                              <div 
-                                className={`h-2 rounded-full ${getStockTrend(item)}`}
-                                style={{ width: `${Math.min(usagePercentage, 100)}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-gray-400">
-                              {usagePercentage.toFixed(1)}%
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Recommendations Section for Low Stock */}
-      {!loading && (lowStockCount > 0 || outOfStockCount > 0) && (
-        <div className="mt-6 bg-yellow-900/30 border border-yellow-500/50 p-4 rounded-xl">
-          <h3 className="font-bold text-yellow-400 mb-2 flex items-center gap-2">
-            <AlertTriangle size={18} /> Restock Recommendations
-          </h3>
-          <div className="space-y-2">
-            {filteredSummary
-              .filter(item => item.currentStock < 10)
-              .slice(0, 5)
-              .map((item, idx) => (
-                <div key={idx} className="text-sm">
-                  • <strong>{item.itemname}</strong>: Only {item.currentStock} units remaining 
-                  {item.supplierName && ` (Supplier: ${item.supplierName})`}
-                  {item.currentStock === 0 && " - URGENT: Out of stock!"}
-                </div>
-              ))}
-          </div>
         </div>
       )}
     </div>
